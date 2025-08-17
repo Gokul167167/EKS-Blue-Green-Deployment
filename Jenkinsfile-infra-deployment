@@ -19,9 +19,9 @@ pipeline {
           dir('terraform') {
             sh 'terraform init'
             sh 'terraform apply -auto-approve'
-            sh 'terraform taint module.aurora.aws_rds_cluster_instance.aurora_instances[0]
+            sh '''terraform taint module.aurora.aws_rds_cluster_instance.aurora_instances[0]
                 terraform taint module.aurora.aws_rds_cluster_instance.aurora_instances[1]
-                terraform apply -auto-approve'
+                terraform apply -auto-approve'''
           }
         }
       }

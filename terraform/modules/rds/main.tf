@@ -43,6 +43,12 @@ resource "aws_rds_cluster_instance" "aurora_instances" {
   engine              = aws_rds_cluster.aurora.engine
   engine_version      = aws_rds_cluster.aurora.engine_version
   publicly_accessible = false
+  lifecycle {
+    ignore_changes = [
+      monitoring_interval,
+      monitoring_role_arn,
+    ]
+  }
 
   tags = {
     Name = "${var.db_name}-instance-${count.index + 1}"

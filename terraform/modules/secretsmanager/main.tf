@@ -10,10 +10,12 @@ resource "aws_secretsmanager_secret" "secrets" {
   }
 }
  
-data "aws_secretsmanager_random_password" "password" {
-  password_length = 8
-  require_each_included_type = true
+resource "random_password" "aurora_password" {
+  length           = 16
+  special          = true
+  override_special = "_%#-"   # allow safe special chars
 }
+
  
 resource "aws_secretsmanager_secret_version" "type" {
   secret_id     = aws_secretsmanager_secret.secrets.id

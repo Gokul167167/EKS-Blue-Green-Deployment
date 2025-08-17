@@ -9,5 +9,7 @@ output "secret_name" {
 }
 
 output "random_password" {
-  value = data.aws_secretsmanager_random_password.password.random_password
+  description = "Generated random password for Aurora"
+  value       = random_password.aurora_password.result
+  sensitive   = true
 }

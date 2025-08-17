@@ -49,7 +49,7 @@ engine_mode    = "provisioned"
 backup_retention_period = 30
 master_username ="dbadmin"
 
-repo_name = "eks-bluegreen-deployment"
+repo_name = "e-commerce"
 
 secret_name = "appdb/credentials"
 description = "Credentials for Aurora MySQL app_db"

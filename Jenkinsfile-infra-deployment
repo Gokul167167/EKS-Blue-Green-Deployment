@@ -1,0 +1,86 @@
+pipeline {
+  agent any
+
+  environment {
+    AWS_DEFAULT_REGION = 'us-east-1'
+    GIT_REPO = 'https://github.com/Gokul167167/EKS-Blue-Green-Deployment.git'
+  }
+
+  stages {
+    stage('Checkout Repo') {
+      steps {
+        git branch: 'main', url: "${env.GIT_REPO}"
+      }
+    }
+
+    stage('Terraform Init & Apply (Infra + ECR)') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
+          dir('terraform') {
+            sh 'terraform init'
+            sh 'terraform apply -auto-approve'
+            sh 'terraform taint module.aurora.aws_rds_cluster_instance.aurora_instances[0]
+                terraform taint module.aurora.aws_rds_cluster_instance.aurora_instances[1]
+                terraform apply -auto-approve'
+          }
+        }
+      }
+    }
+
+    stage('Fetch Terraform Outputs (ECR URL)') {
+      steps {
+        dir('terraform') {
+          script {
+            env.ECR_REPO = sh(script: "terraform output -raw repository_url", returnStdout: true).trim()
+          }
+          sh "echo ✅ ECR Repo: ${env.ECR_REPO}"
+        }
+      }
+    }
+
+    stage('Build Docker Images') {
+      steps {
+        dir('E-commerce Application/client') {
+          sh "npm ci || npm install"
+          sh "docker build -t frontend:latest ."
+        }
+        dir('E-commerce Application') {
+          sh "npm ci || npm install"
+          sh "docker build -t backend:latest -f backend/Dockerfile ."
+        }
+      }
+    }
+
+    stage('Login to AWS ECR') {
+      steps {
+        sh """
+          aws ecr get-login-password --region ${env.AWS_DEFAULT_REGION} | \
+          docker login --username AWS --password-stdin ${env.ECR_REPO}
+        """
+      }
+    }
+
+    stage('Tag & Push Docker Images to Single ECR Repo') {
+      steps {
+        sh """
+          # Push frontend image
+          docker tag frontend:latest ${env.ECR_REPO}:frontend-latest
+          docker push ${env.ECR_REPO}:frontend-latest
+
+          # Push backend image
+          docker tag backend:latest ${env.ECR_REPO}:backend-latest
+          docker push ${env.ECR_REPO}:backend-latest
+        """
+      }
+    }
+  }
+
+  post {
+    success {
+      echo '✅ Terraform infra created + Docker images (frontend/backend) built and pushed to single ECR repo'
+    }
+    failure {
+      echo '❌ Pipeline failed. Check logs.'
+    }
+  }
+}

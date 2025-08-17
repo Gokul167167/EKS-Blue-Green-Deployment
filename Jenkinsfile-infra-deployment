@@ -26,14 +26,17 @@ pipeline {
 
     stage('Fetch Terraform Outputs (ECR URL)') {
       steps {
-        dir('terraform') {
-          script {
-            env.ECR_REPO = sh(script: "terraform output -raw repository_url", returnStdout: true).trim()
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
+          dir('terraform') {
+            script {
+              env.ECR_REPO = sh(script: "terraform output -raw repository_url", returnStdout: true).trim()
+            }
+            sh "echo ✅ ECR Repo: ${env.ECR_REPO}"
           }
-          sh "echo ✅ ECR Repo: ${env.ECR_REPO}"
         }
       }
     }
+
 
     stage('Build Docker Images') {
       steps {

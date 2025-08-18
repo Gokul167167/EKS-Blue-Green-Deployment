@@ -1,0 +1,134 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        GIT_REPO = 'https://github.com/Gokul167167/EKS-Blue-Green-Deployment.git'
+        ECR_REPO_NAME = 'ecommerce'
+        BLUE_CLUSTER = 'blue_env_cluster'
+        GREEN_CLUSTER = 'green_env_cluster'
+        STATE_FILE = "${WORKSPACE}/active_cluster.txt"
+    }
+
+    triggers {
+        // ✅ Webhook trigger (push event) – must configure in GitHub
+        githubPush()
+    }
+
+    stages {
+        stage('Checkout Repo') {
+            steps {
+                git branch: 'dev', url: "${env.GIT_REPO}"
+            }
+        }
+
+        stage('Determine Target Cluster') {
+            steps {
+                script {
+                    if (fileExists("${STATE_FILE}")) {
+                        ACTIVE = readFile("${STATE_FILE}").trim()
+                    } else {
+                        ACTIVE = "blue"  // Default first active
+                    }
+
+                    if (ACTIVE == "blue") {
+                        TARGET = "green"
+                        CURRENT_CLUSTER = env.GREEN_CLUSTER
+                        NEXT_ACTIVE = "green"
+                    } else {
+                        TARGET = "blue"
+                        CURRENT_CLUSTER = env.BLUE_CLUSTER
+                        NEXT_ACTIVE = "blue"
+                    }
+
+                    echo "✅ Current active: ${ACTIVE}"
+                    echo "🚀 Deploying to idle cluster: ${TARGET}"
+
+                    writeFile file: "${STATE_FILE}", text: "${NEXT_ACTIVE}"
+                }
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                dir('E-commerce Application/client') {
+                    sh "npm ci"
+                    sh "npm run build"
+                    sh "docker build -t frontend:latest ."
+                }
+
+                dir('E-commerce Application/backend') {
+                    sh "npm ci"
+                }
+
+                dir('E-commerce Application') {
+                    sh "docker build -t backend:latest -f backend/Dockerfile ."
+                }
+            }
+        }
+
+        stage('Login to AWS ECR') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
+                    script {
+                        ECR_REPO = sh(script: "aws ecr describe-repositories --repository-names ${env.ECR_REPO_NAME} --query 'repositories[0].repositoryUri' --output text", returnStdout: true).trim()
+                        env.ECR_REPO = ECR_REPO
+                        sh """
+                            aws ecr get-login-password --region ${env.AWS_DEFAULT_REGION} | \
+                            docker login --username AWS --password-stdin ${ECR_REPO}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Tag & Push Docker Images') {
+            steps {
+                script {
+                    sh """
+                        docker tag frontend:latest ${env.ECR_REPO}:frontend-latest
+                        docker push ${env.ECR_REPO}:frontend-latest
+
+                        docker tag backend:latest ${env.ECR_REPO}:backend-latest
+                        docker push ${env.ECR_REPO}:backend-latest
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Idle Cluster') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
+                    script {
+                        sh """
+                            aws eks --region ${env.AWS_DEFAULT_REGION} update-kubeconfig --name ${env.BLUE_CLUSTER} --alias blue-cluster
+                            aws eks --region ${env.AWS_DEFAULT_REGION} update-kubeconfig --name ${env.GREEN_CLUSTER} --alias green-cluster
+
+                            kubectl config use-context ${TARGET}-cluster
+                            echo '🚀 Deploying new version to ${TARGET} EKS'
+
+                            if [ "${TARGET}" = "blue" ]; then
+                                kubectl apply -f "Blue EKS/frontend-deployment.yaml"
+                                kubectl apply -f "Blue EKS/backend-deployment.yaml"
+                                kubectl apply -f "Blue EKS/ingress.yaml"
+                            else
+                                kubectl apply -f "Green EKS/frontend-deployment.yaml"
+                                kubectl apply -f "Green EKS/backend-deployment.yaml"
+                                kubectl apply -f "Green EKS/ingress.yaml"
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Blue-Green deployment complete. New active cluster is ${NEXT_ACTIVE}."
+        }
+        failure {
+            echo "❌ Blue-Green deployment failed."
+        }
+    }
+}

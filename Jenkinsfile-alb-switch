@@ -112,8 +112,8 @@ pipeline {
                                 kubectl apply -f "Blue EKS/backend-deployment.yaml"
                                 kubectl apply -f "Blue EKS/ingress.yaml"
                             else
-                                kubectl apply -f "Green\ EKS/backend-deployment.yaml"
-                                kubectl apply -f "Green\ EKS/frontend-deployment.yaml"
+                                kubectl apply -f "Green EKS/backend-deployment.yaml"
+                                kubectl apply -f "Green EKS/frontend-deployment.yaml"
                                 kubectl apply -f "Green EKS/ingress.yaml"
                             fi
                         """

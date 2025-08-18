@@ -41,6 +41,7 @@ pipeline {
             steps {
                 dir('E-commerce Application/client') {
                     sh "npm ci"
+                    sh "npm run build"
                     sh "docker build -t frontend:latest ."
                 }
  

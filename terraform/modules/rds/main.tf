@@ -28,7 +28,6 @@ resource "aws_rds_cluster" "aurora" {
   deletion_protection     = false
   enable_http_endpoint    = false
   apply_immediately       = true
-
   tags = {
     Name = "${var.db_name}-cluster"
   }

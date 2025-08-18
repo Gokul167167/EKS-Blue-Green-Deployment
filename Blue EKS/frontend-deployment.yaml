@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: <your-ecr-repo>:frontend-latest
+          image: 748827982277.dkr.ecr.us-east-1.amazonaws.com/ecommerce:frontend-latest
           ports:
             - containerPort: 5000
 ---

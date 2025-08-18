@@ -1,98 +1,97 @@
 pipeline {
-  agent any
-
-  environment {
-    AWS_DEFAULT_REGION = 'us-east-1'
-    GIT_REPO = 'https://github.com/Gokul167167/EKS-Blue-Green-Deployment.git'
-    ECR_REPO_NAME = 'ecommerce'
-  }
-
-  stages {
-    stage('Checkout Repo') {
-      steps {
-        git branch: 'main', url: "${env.GIT_REPO}"
-      }
+    agent any
+ 
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        GIT_REPO = 'https://github.com/Gokul167167/EKS-Blue-Green-Deployment.git'
+        ECR_REPO_NAME = 'ecommerce'
     }
-
-    stage('Terraform Init & Apply (Infra + ECR)') {
-      steps {
-        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
-          dir('terraform') {
-            sh 'terraform init'
-            sh 'terraform apply -auto-approve'
-          }
+ 
+    stages {
+        stage('Checkout Repo') {
+            steps {
+                git branch: 'main', url: "${env.GIT_REPO}"
+            }
         }
-      }
-    }
-
-    stage('Fetch ECR Repo URL from Terraform Output') {
-      steps {
-        dir('terraform') {
-          script {
-            def ecrRepo = sh(script: "terraform output -raw repository_url", returnStdout: true).trim()
-            writeFile file: '../ecr_env', text: "ECR_REPO=${ecrRepo}"
-            echo "✅ ECR Repo from Terraform: ${ecrRepo}"
-          }
+ 
+        stage('Terraform Init & Apply (Infra + ECR)') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
+                    dir('terraform') {
+                        sh 'terraform init'
+                        sh 'terraform apply -auto-approve'
+                    }
+                }
+            }
         }
-      }
-    }
-
-    stage('Build Docker Images') {
-      steps {
-        dir('E-commerce Application/client') {
-          sh "npm ci"
-          sh "npm run build"
-          sh "docker build -t frontend:latest ."
+ 
+        stage('Fetch ECR Repo URL') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
+                    sh '''
+                        ECR_REPO=$(aws ecr describe-repositories --repository-names ecommerce --query "repositories[0].repositoryUri" --output text)
+                        echo "✅ ECR Repo: $ECR_REPO"
+                        echo "ECR_REPO=$ECR_REPO" > ecr_env
+                    '''
+                }
+            }
         }
-
-        dir('E-commerce Application/backend') {
-          sh "npm ci"
+ 
+        stage('Build Docker Images') {
+            steps {
+                dir('E-commerce Application/client') {
+                    sh "npm ci"
+                    sh "docker build -t frontend:latest ."
+                }
+ 
+                dir('E-commerce Application/backend') {
+                    sh "npm ci"
+                }
+ 
+                dir('E-commerce Application') {
+                    sh "docker build -t backend:latest -f backend/Dockerfile ."
+                }
+            }
         }
-
-        dir('E-commerce Application') {
-          sh "docker build -t backend:latest -f backend/Dockerfile ."
+ 
+        stage('Login to AWS ECR') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
+                    script {
+                        def ECR_REPO = readFile('ecr_env').trim().split('=')[1]
+                        sh """
+                            aws ecr get-login-password --region ${env.AWS_DEFAULT_REGION} | \
+                            docker login --username AWS --password-stdin ${ECR_REPO}
+                        """
+                    }
+                }
+            }
         }
-      }
-    }
-
-    stage('Login to AWS ECR') {
-      steps {
-        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
-          script {
-            def ECR_REPO = readFile('ecr_env').trim().split('=')[1]
-            sh """
-              aws ecr get-login-password --region ${env.AWS_DEFAULT_REGION} | \
-              docker login --username AWS --password-stdin ${ECR_REPO}
-            """
-          }
+ 
+        stage('Tag & Push Docker Images') {
+            steps {
+                script {
+                    def ECR_REPO = readFile('ecr_env').trim().split('=')[1]
+                    sh """
+                        # Tag and push frontend
+                        docker tag frontend:latest ${ECR_REPO}:frontend-latest
+                        docker push ${ECR_REPO}:frontend-latest
+ 
+                        # Tag and push backend
+                        docker tag backend:latest ${ECR_REPO}:backend-latest
+                        docker push ${ECR_REPO}:backend-latest
+                    """
+                }
+            }
         }
-      }
     }
-
-    stage('Tag & Push Docker Images') {
-      steps {
-        script {
-          def ECR_REPO = readFile('ecr_env').trim().split('=')[1]
-          sh """
-            # Tag and push frontend
-            docker tag frontend:latest ${ECR_REPO}:frontend-latest
-            docker push ${ECR_REPO}:frontend-latest
-
-            # Tag and push backend
-            docker tag backend:latest ${ECR_REPO}:backend-latest
-            docker push ${ECR_REPO}:backend-latest
-          """
+ 
+    post {
+        success {
+            echo '✅ Terraform infra created + Docker images (frontend/backend) built and pushed to single ECR repo'
         }
-      }
+        failure {
+            echo '❌ Pipeline failed. Check logs.'
+        }
     }
-  }
-
-  post {
-    success {
-      echo '✅ Terraform infra created + Docker images (frontend/backend) built and pushed to single ECR repo'
-    }
-    failure {
-      echo '❌ Pipeline failed. Check logs.'
-    }
-  }
 }

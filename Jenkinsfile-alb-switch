@@ -86,11 +86,11 @@ pipeline {
             steps {
                 script {
                     sh """
-                        docker tag frontend:latest ${env.ECR_REPO}:frontend-latest
-                        docker push ${env.ECR_REPO}:frontend-latest
+                        docker tag frontend:latest ${env.ECR_REPO}:frontend-latest2
+                        docker push ${env.ECR_REPO}:frontend-latest2
 
-                        docker tag backend:latest ${env.ECR_REPO}:backend-latest
-                        docker push ${env.ECR_REPO}:backend-latest
+                        docker tag backend:latest ${env.ECR_REPO}:backend-latest2
+                        docker push ${env.ECR_REPO}:backend-latest2
                     """
                 }
             }
@@ -112,8 +112,8 @@ pipeline {
                                 kubectl apply -f "Blue EKS/backend-deployment.yaml"
                                 kubectl apply -f "Blue EKS/ingress.yaml"
                             else
-                                kubectl apply -f "Green EKS/frontend-deployment.yaml"
-                                kubectl apply -f "Green EKS/backend-deployment.yaml"
+                                kubectl apply -f "Green\ EKS/backend-deployment.yaml"
+                                kubectl apply -f "Green\ EKS/frontend-deployment.yaml"
                                 kubectl apply -f "Green EKS/ingress.yaml"
                             fi
                         """

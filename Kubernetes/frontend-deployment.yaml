@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-blue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+      color: blue
+  template:
+    metadata:
+      labels:
+        app: frontend
+        color: blue
+    spec:
+      containers:
+        - name: frontend
+          image: <your-ecr-repo>:frontend-latest
+          ports:
+            - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-blue-service
+spec:
+  selector:
+    app: frontend
+    color: blue
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: ClusterIP

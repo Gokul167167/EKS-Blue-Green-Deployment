@@ -1,0 +1,66 @@
+---
+- name: Switch Route53 record to active EKS cluster
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    hosted_zone_id: "Z123456789ABCDEF"     # <-- Replace with your Route53 Hosted Zone ID
+    record_name: "ecommerce.example.com."  # <-- Your domain name in Route53 (with trailing dot)
+    record_type: "CNAME"                   # Or "A" if you are using alias
+    ttl: 60                                # DNS TTL
+    state_file: "{{ lookup('env', 'WORKSPACE') }}/active-cluster.txt"
+
+  tasks:
+    - name: Read current active cluster from state file
+      slurp:
+        src: "{{ state_file }}"
+      register: cluster_state
+
+    - name: Set active cluster fact
+      set_fact:
+        active_cluster: "{{ cluster_state['content'] | b64decode | trim }}"
+
+    - name: Debug active cluster
+      debug:
+        msg: "✅ Active cluster is {{ active_cluster }}"
+
+    - name: Get ALB DNS for blue ingress
+      command: >
+        kubectl get ingress ecommerce-blue-ingress -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+      register: blue_alb
+      ignore_errors: yes
+
+    - name: Get ALB DNS for green ingress
+      command: >
+        kubectl get ingress ecommerce-green-ingress -n default -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+      register: green_alb
+      ignore_errors: yes
+
+    - name: Debug ALB DNSs
+      debug:
+        msg:
+          - "Blue ALB: {{ blue_alb.stdout }}"
+          - "Green ALB: {{ green_alb.stdout }}"
+
+    - name: Select ALB DNS based on active cluster
+      set_fact:
+        target_alb: "{{ blue_alb.stdout if active_cluster == 'blue' else green_alb.stdout }}"
+
+    - name: Debug selected ALB
+      debug:
+        msg: "✅ Routing traffic to {{ active_cluster }} cluster via ALB: {{ target_alb }}"
+
+    - name: Update Route53 record to point to active cluster ALB
+      amazon.aws.route53:
+        state: present
+        zone: "{{ hosted_zone_id }}"
+        record: "{{ record_name }}"
+        type: "{{ record_type }}"
+        ttl: "{{ ttl }}"
+        value: "{{ target_alb }}"
+      register: route53_update
+
+    - name: Show Route53 update status
+      debug:
+        var: route53_update

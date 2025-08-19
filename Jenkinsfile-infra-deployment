@@ -32,7 +32,7 @@ pipeline {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
                     sh '''
                         ECR_REPO=$(aws ecr describe-repositories --repository-names ecommerce --query "repositories[0].repositoryUri" --output text)
-                        echo "✅ ECR Repo: $ECR_REPO"
+                        echo "ECR Repo: $ECR_REPO"
                         echo "ECR_REPO=$ECR_REPO" > ecr_env
                     '''
                 }
@@ -93,11 +93,11 @@ pipeline {
               withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS Access Key']]) {
             script {
                   sh """
-                      # ✅ Configure kubeconfig with aliases
+                      # Configure kubeconfig with aliases
                       aws eks --region ${env.AWS_DEFAULT_REGION} update-kubeconfig --name ${env.BLUE_CLUSTER} --alias blue-cluster
                       aws eks --region ${env.AWS_DEFAULT_REGION} update-kubeconfig --name ${env.GREEN_CLUSTER} --alias green-cluster
 
-                      # ✅ Switch to Blue cluster and deploy all manifests
+                      # Switch to Blue cluster and deploy all manifests
                       kubectl config use-context blue-cluster
                       echo 'Deploying to Blue EKS (frontend, backend, ingress)'
                       kubectl apply -f "Blue EKS/frontend-deployment.yaml"
